@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: "demo4"
+  NodeInstanceRoleName:
+    Type: String
+    Default: "EksNodeRole"
+  NodeGroupName:
+    Type: String
+    Default: "demo4-ng1"
+  NodeImageId:
+    Type: AWS::EC2::Image::Id
+    Default: "ami-098fb7e9b507904e7"
+  NodeInstanceType:
+    Type: String
+    Default: "t3.medium"
+  NodeKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: "test-aws3-ireland"
+  NodeSecurityGroup:
+    Type: String
+    Default: "sg-e0b51a91"
+  NodeVolumeSize:
+    Type: Number
+    Default: 20
+  NodeVolumeType:
+    Type: String
+    Default: "gp2"
+  NodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 2
+  NodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+  NodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 4
+  NodeSubnet1:
+    Type: String
+    Default: "subnet-3c1bbc66"
+  NodeSubnet2:
+    Type: String
+    Default: "subnet-46bbde20"
+  NodeBootstrapArguments:
+    Default: ""
+    Type: String
+
+Resources:
+  NodeInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service:
+            - "ec2.amazonaws.com"
+          Action:
+          - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      RoleName: !Ref NodeInstanceRoleName
+
+  NodeInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref NodeInstanceRole
+
+  NodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: "true"
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      ImageId: !Ref NodeImageId
+      InstanceType: !Ref NodeInstanceType
+      KeyName: !Ref NodeKeyName
+      SecurityGroups:
+      - !Ref NodeSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeSize: !Ref NodeVolumeSize
+            VolumeType: !Ref NodeVolumeType
+            DeleteOnTermination: "true"
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            set -o xtrace
+            /etc/eks/bootstrap.sh ${ClusterName} ${NodeBootstrapArguments}
+            /opt/aws/bin/cfn-signal --exit-code $? \
+                     --stack  ${AWS::StackName} \
+                     --resource NodeGroup  \
+                     --region ${AWS::Region}
+
+  NodeGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      DesiredCapacity: !Ref NodeAutoScalingGroupDesiredCapacity
+      LaunchConfigurationName: !Ref NodeLaunchConfig
+      MinSize: !Ref NodeAutoScalingGroupMinSize
+      MaxSize: !Ref NodeAutoScalingGroupMaxSize
+      VPCZoneIdentifier:
+        - !Ref NodeSubnet1
+        - !Ref NodeSubnet2
+      Tags:
+      - Key: Name
+        Value: !Sub "${ClusterName}-${NodeGroupName}-Node"
+        PropagateAtLaunch: 'true'
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: "owned"
+        PropagateAtLaunch: "true"
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !Ref NodeAutoScalingGroupDesiredCapacity
+        PauseTime: "PT5M"
+
+Outputs:
+  NodeInstanceRole:
+    Value: !GetAtt NodeInstanceRole.Arn

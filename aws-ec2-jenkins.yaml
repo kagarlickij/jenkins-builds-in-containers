@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+
+  InstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "JenkinsInstanceRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service:
+            - "ec2.amazonaws.com"
+          Action:
+          - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+        - "arn:aws:iam::aws:policy/AmazonECS_FullAccess"
+
+  InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref InstanceRole
+
+  Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: "ami-0fad7378adf284ce0"
+      InstanceType: "t2.medium"
+      KeyName: "test-aws3-ireland"
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: "Name"
+          Value: "Jenkins"
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum update -y && \
+            wget --no-check-certificate -c --header "Cookie:oraclelicense=accept-securebackup-cookie" "https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.rpm" && \
+            yum localinstall jdk-8u201-linux-x64.rpm -y && \
+            rm -f jdk-8u201-linux-x64.rpm && \
+            wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat-stable/jenkins.repo && \
+            rpm --import http://pkg.jenkins-ci.org/redhat-stable/jenkins-ci.org.key && \
+            yum install jenkins -y && \
+            chkconfig jenkins on && \
+            service jenkins start
+      BlockDeviceMappings:
+        -
+          DeviceName: "/dev/sdm"
+          Ebs:
+            VolumeType: gp2
+            DeleteOnTermination: true
+            VolumeSize: 10
+  EIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      InstanceId: !Ref Instance
+
+Outputs:
+  InstanceId:
+    Value: !Ref Instance
+  InstancePublicIp:
+    Value: !GetAtt Instance.PublicIp

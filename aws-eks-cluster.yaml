@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  IamRoleName:
+    Type: String
+    Default: "EksClusterRole"
+  ClusterName:
+    Type: String
+    Default: "demo4"
+  ClusterSecurityGroup:
+    Type: String
+    Default: "sg-e0b51a91"
+  ClusterSubnet1:
+    Type: String
+    Default: "subnet-3c1bbc66"
+  ClusterSubnet2:
+    Type: String
+    Default: "subnet-46bbde20"
+
+Resources:
+  IamRoleEksCluster:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "eks.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+        - "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+      RoleName: !Ref IamRoleName
+
+  EksCluster:
+    Type: "AWS::EKS::Cluster"
+    Properties:
+      Name: !Ref ClusterName
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref ClusterSecurityGroup
+        SubnetIds:
+          - !Ref ClusterSubnet1
+          - !Ref ClusterSubnet2
+      RoleArn: !GetAtt IamRoleEksCluster.Arn
+      Version: "1.11"
+
+Outputs:
+  IamRoleEksCluster:
+    Value: !GetAtt IamRoleEksCluster.Arn
